@@ -4,7 +4,6 @@ const cors = require("cors");
 const {
     generateScript
 } = require("./utils");
-const fs = require("node:fs");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,7 +30,7 @@ app.post("/create", async (req, res) => {
     try {
         const payload = req.body;
         const script = await generateScript(payload);
-            
+
         res.send(script);
     } catch (err) {
         console.error(err);

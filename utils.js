@@ -1,7 +1,15 @@
 require("dotenv").config();
+
+const os = require("node:os")
+const fs = require("node:fs")
+
 const {
     GoogleGenerativeAI
 } = require("@google/generative-ai");
+const {
+    GoogleAIFileManager
+} = require("@google/generative-ai/server");
+
 const PlayHT = require('playht')
 const googleTTS = require("google-tts-api")
 
@@ -20,6 +28,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const genAIModel = genAI.getGenerativeModel({
     model: "gemini-1.5-pro"
 })
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
 
 const groupBy = (arr, key) => {
     return arr.reduce((acc, curr) => {
@@ -27,6 +36,32 @@ const groupBy = (arr, key) => {
         return acc;
     }, {});
 };
+
+async function uploadToGemini(path, mimeType) {
+    const uploadResult = await fileManager.uploadFile(path, {
+        mimeType,
+        displayName: path,
+    });
+    const file = uploadResult.file;
+    console.log(`Uploaded file ${file.displayName} as: ${file.name}`);
+    return file;
+}
+
+async function waitForFilesActive(files) {
+    console.log("Waiting for file processing...");
+    for (const name of files.map((file) => file.name)) {
+        let file = await fileManager.getFile(name);
+        while (file.state === "PROCESSING") {
+            process.stdout.write(".")
+            await new Promise((resolve) => setTimeout(resolve, 10000));
+            file = await fileManager.getFile(name)
+        }
+        if (file.state !== "ACTIVE") {
+            throw Error(`File ${file.name} failed to process`);
+        }
+    }
+    console.log("...all files ready\n");
+}
 
 async function createCollagePayload(assets) {
     try {
@@ -60,7 +95,7 @@ async function createCollagePayload(assets) {
             const images = group[location]["IMAGE"];
             const videos = group[location]["VIDEO"];
 
-            for (let i = 0; i < images.length; i++) {
+            for (let i = 0; i < images?.length; i++) {
                 const imageCollection = images.splice(0, 4).map(image => Buffer.from(image.buffer, "base64"));
                 const base64Buffer = Buffer.from(await createCollage(imageCollection, collageWidth, "image/png")).toString("base64")
                 collage.push({
@@ -88,35 +123,49 @@ async function createCollagePayload(assets) {
     }
 }
 
-function simplifyCollagePayload(collage) {
-    let simplified = [];
+function simplifyCollagePayload(collage, videoUri) {
+    try {
+        let simplified = [];
 
-    simplified = collage.map(c => {
+        simplified = collage.map(c => {
+            return {
+                type: c.type,
+                location: c.location,
+                collage: c.buffer,
+                assets: c.assets.map(a => {
+                    return {
+                        description: a.description,
+                        creation_time: a.creation_time,
+                        type: a.type
+                    }
+                })
+            }
+        })
+
         return {
-            type: c.type,
-            location: c.location,
-            collage: c.buffer,
-            assets: c.assets.map(a => {
-                return {
-                    description: a.description,
-                    creation_time: a.creation_time,
-                    type: a.type
+            collage: simplified,
+            buffers: collage.map((c, index) => {
+                if (c.type === "IMAGE") {
+                    return {
+                        inlineData: {
+                            mimeType: (collage[index].type === "IMAGE") ? "image/png" : collage[index].assets[0].mimeType,
+                            data: c.buffer
+                        }
+                    }
+                } else {
+                    return {
+                        fileData: {
+                            mimeType: collage[index].assets[0].mimeType,
+                            fileUri: videoUri[c.buffer]
+                        }
+                    }
                 }
             })
         }
-    })
-
-    return {
-        collage: simplified,
-        buffers: collage.map((c, index) => {
-            return {
-                inlineData: {
-                    mimeType: (collage[index].type === "IMAGE") ? "image/png" : collage[index].assets[0].mimeType,
-                    data: c.buffer
-                }
-            }
-        })
-    };
+    } catch (err) {
+        console.error(`Error simplifying collage payload: ` + err.message)
+        throw err;
+    }
 }
 
 async function describeAssets(assets) {
@@ -147,18 +196,42 @@ async function describeAssets(assets) {
             }
         })
 
-        const result = await chatSession.sendMessage(assets.map(asset => {
-            return {
-                inlineData: {
-                    data: asset.buffer,
-                    mimeType: asset.mimeType
+        var videoUri = {}
+
+        const inlineData = await Promise.all(assets.map(async asset => {
+            if (asset.type === "IMAGE") {
+                return {
+                    inlineData: {
+                        data: asset.buffer,
+                        mimeType: asset.mimeType
+                    }
+                }
+            } else {
+                const mimeType = asset.mimeType;
+                const tempFilePath = `${os.tmpdir()}/video.${mimeType.slice(mimeType.indexOf("/") + 1)}`;
+                fs.writeFileSync(tempFilePath, Buffer.from(asset.buffer, "base64"))
+                const files = [await uploadToGemini(tempFilePath, mimeType)]
+                await waitForFilesActive(files);
+                fs.unlinkSync(tempFilePath)
+
+                videoUri[asset.buffer] = files[0].uri;
+
+                return {
+                    fileData: {
+                        mimeType: mimeType,
+                        fileUri: files[0].uri
+                    }
                 }
             }
         }))
+        const result = await chatSession.sendMessage(inlineData)
 
-        return JSON.parse(result.response.text()).result
+        return {
+            descriptions: JSON.parse(result.response.text()).result,
+            videoUri: videoUri
+        }
     } catch (err) {
-        console.error("Error describing image: " + err.message);
+        console.error("Error describing asset: " + err.message);
         return "";
     }
 }
@@ -248,7 +321,10 @@ async function generateScript(payload) {
             playHTCred
         } = payload;
 
-        const descriptions = await describeAssets(assets);
+        const {
+            descriptions,
+            videoUri
+        } = await describeAssets(assets);
         assets = assets.map((asset, index) => {
             return {
                 ...asset,
@@ -256,7 +332,7 @@ async function generateScript(payload) {
             }
         })
         const collagePayload = await createCollagePayload(assets);
-        const simplified = simplifyCollagePayload(collagePayload);
+        const simplified = simplifyCollagePayload(collagePayload, videoUri);
 
         let script = await generateNarrative(simplified, memorableMoments, type);
 
@@ -305,7 +381,7 @@ async function tts(text, playHTCred) {
             voiceEngine: "PlayHT2.0",
             outputFormat: "mp3",
             inputType: "plain",
-            emotion: `${playHTCred.gender}_happy`
+            // emotion: `${playHTCred.gender}_happy`
         })
         console.log(audio.audioUrl)
         return audio.audioUrl
