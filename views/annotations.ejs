@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+    <title>Annotations</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+        }
+
+        main {
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 2em;
+            color: #333;
+        }
+
+        .annotations {
+            display: flex;
+            flex-direction: row;
+            justify-content: flex-start;
+            align-items: center;
+            align-content: space-between;
+            flex-wrap: wrap;
+            width: 80vw;
+            height: 100%;
+            margin: auto;
+        }
+
+        .box {
+            padding: 15px;
+            margin: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            background-color: #fff;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            transition: transform 0.2s;
+        }
+
+        .face {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border: 2px solid #ccc;
+        }
+
+        p.annotation {
+            background-color: #eee;
+            padding: 5px 10px;
+            border-radius: 4px;
+            color: #666;
+            font-size: 0.9em;
+            text-align: center;
+            width: 100px;
+            overflow-wrap: break-word;
+        }
+
+        @media (max-width: 600px) {
+            .annotations {
+                width: 100%;
+            }
+
+            .face {
+                width: 80px;
+                height: 80px;
+            }
+
+            p.annotation {
+                width: 80px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <center>
+            <h1>Annotations</h1>
+        </center>
+        <div class="annotations">
+            <% annotations.forEach(asset => { %>
+                <div class="box">
+                    <img src="data:image/png;base64,<%= asset.buffer %>" class="face"/>
+                    <p class="annotation"><%= asset.annotation || "" %></p>
+                </div>
+            <% }) %>
+        </div>
+    </main>
+</body>
+</html>

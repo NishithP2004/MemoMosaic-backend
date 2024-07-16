@@ -20,6 +20,9 @@ const {
     createApi
 } = require("unsplash-js")
 
+const puppeteer = require("puppeteer")
+const ejs = require("ejs")
+
 const unsplash = createApi({
     accessKey: process.env.UNSPLASH_API_ACCESS_KEY
 })
@@ -236,7 +239,7 @@ async function describeAssets(assets) {
     }
 }
 
-async function generateNarrative(payload, memorableMoments, type) {
+async function generateNarrative(payload, memorableMoments, type, annotationsImage) {
     try {
         const chatSession = genAIModel.startChat({
             generationConfig: {
@@ -247,13 +250,14 @@ async function generateNarrative(payload, memorableMoments, type) {
             systemInstruction: {
                 parts: [{
                     text: ` You are an expert in creating memorable albums or travel vlogs.
-                            Given a JSON Object containing a collection of assets and their descriptions, you can intelligently script a short narrative under 200 characters based on the metadata provided such as the creation time of the images, location, etc and the type of script needed - album or vlog (specified in the "type" key of the input JSON object).
+                            Given a JSON Object containing a collection of assets and their descriptions, you can intelligently script a short narrative under 300 characters based on the metadata provided such as the creation time of the images, location, etc and the type of script needed - album or vlog (specified in the "type" key of the input JSON object).
                             The images have been sorted in chronological order based on their creation timestamp and grouped by their location.
                             Generate a scene for each element of the input JSON Array of objects.
                             The generated collage is provided along with descriptions of each individual image used to generate the collage.
                             Each element of the collage array corresponds to an individual collage which will be placed in a scene.
                             Atmost one collage will be present in each scene and either a collage or a video can be present in a scene.
                             Ensure that the length of the output "scenes" array is equal to the length of the input "collage" array and is in order (essentially map each collage element to the corresponding scene).
+                            For better context on the genealogy, we've included an image titled 'Annotations'. This image features all the characters' faces and their annotations (which may include their name, relationship with the user, etc as the case may be).
                             The short narrative should include any memorable moments (if provided in the input JSON object) and narrated in first person, past tense.
                             Create a narrative for each array element in the provided JSON Array of Objects.
                             Return the script in the below given JSON format.
@@ -286,7 +290,13 @@ async function generateNarrative(payload, memorableMoments, type) {
                 }
                 `
             },
-            ...payload.buffers
+            ...payload.buffers,
+            {
+                inlineData: {
+                    data: annotationsImage,
+                    mimeType: "image/png"
+                }
+            }
         ])
 
         return JSON.parse(result.response.text())
@@ -318,7 +328,8 @@ async function generateScript(payload) {
             assets,
             type,
             memorableMoments,
-            playHTCred
+            playHTCred,
+            annotations
         } = payload;
 
         const {
@@ -333,8 +344,9 @@ async function generateScript(payload) {
         })
         const collagePayload = await createCollagePayload(assets);
         const simplified = simplifyCollagePayload(collagePayload, videoUri);
+        const annotationsImage = await convertToImage(annotations)
 
-        let script = await generateNarrative(simplified, memorableMoments, type);
+        let script = await generateNarrative(simplified, memorableMoments, type, annotationsImage);
 
         script.scenes = await Promise.all(script.scenes.map(async (scene, index) => {
             return {
@@ -455,6 +467,30 @@ async function uploadFile(base64Data, filename = "audio.mp3") {
     } catch (error) {
         console.error('Error uploading file:', error.message);
     }
+}
+
+async function convertToImage(annotations) {
+    let ejs_template = fs.readFileSync(__dirname + "/views/annotations.ejs", 'utf-8');
+    let html = ejs.render(ejs_template, {
+        annotations
+    });
+
+    const browser = await puppeteer.launch({
+        headless: "new"
+    });
+    const page = await browser.newPage();
+    await page.setContent(html, {
+        waitUntil: "load"
+    });
+    let image = await page.screenshot({
+        fullPage: true,
+        encoding: "base64",
+        type: "png"
+    });
+
+    await browser.close();
+
+    return image;
 }
 
 module.exports = {
