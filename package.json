@@ -22,6 +22,7 @@
     "google-tts-api": "^2.0.2",
     "playht": "^0.9.8",
     "puppeteer": "^22.13.0",
+    "tfjs": "^0.6.0",
     "unsplash-js": "^7.0.19"
   }
 }
