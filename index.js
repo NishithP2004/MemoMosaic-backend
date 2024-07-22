@@ -16,6 +16,7 @@ app.use(express.urlencoded({
     extended: true
 }))
 app.use(cors())
+app.set('trust proxy', true);
 
 app.get("/", (req, res) => {
     res.send({
