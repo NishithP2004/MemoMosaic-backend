@@ -26,5 +26,5 @@ jobs:
         GOOGLE_ARTIFACT_REGISTRY_PATH: ${{ secrets.GOOGLE_ARTIFACT_REGISTRY_PATH }}
       run: |
         gcloud auth configure-docker us-central1-docker.pkg.dev
-        docker build -t $GOOGLE_ARTIFACT_REGISTRY_PATH/nexus-search-backend:latest .
-        docker push $GOOGLE_ARTIFACT_REGISTRY_PATH/nexus-search-backend:latest
+        docker build -t $GOOGLE_ARTIFACT_REGISTRY_PATH/memomosaic-backend:latest .
+        docker push $GOOGLE_ARTIFACT_REGISTRY_PATH/memomosaic-backend:latest
