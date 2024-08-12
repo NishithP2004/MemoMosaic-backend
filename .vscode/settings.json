@@ -1,0 +1,14 @@
+{
+    "containerApps.deploymentConfigurations": [
+        {
+            "label": "memomosaic-backend",
+            "type": "AcrDockerBuildRequest",
+            "dockerfilePath": "Dockerfile",
+            "srcPath": ".",
+            "envPath": "node_modules\\psl\\.env",
+            "resourceGroup": "projectx-frontend",
+            "containerApp": "memomosaic-backend",
+            "containerRegistry": "projectxfrontendf1d7ef"
+        }
+    ]
+}
