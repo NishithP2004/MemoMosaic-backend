@@ -29,7 +29,7 @@ const unsplash = createApi({
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const genAIModel = genAI.getGenerativeModel({
-    model: "gemini-1.5-pro"
+    model: process.env.GEMINI_MODEL || "gemini-1.5-pro"
 })
 const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
 
