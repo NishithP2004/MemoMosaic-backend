@@ -95,17 +95,18 @@ async function createCollagePayload(assets) {
             console.log(group)
             console.log(location)
 
-            const images = group[location]["IMAGE"];
-            const videos = group[location]["VIDEO"];
+            const images = group[location]["IMAGE"] || [];
+            const videos = group[location]["VIDEO"] || [];
 
-            for (let i = 0; i < images?.length; i++) {
-                const imageCollection = images.splice(0, 4).map(image => Buffer.from(image.buffer, "base64"));
-                const base64Buffer = Buffer.from(await createCollage(imageCollection, collageWidth, "image/png")).toString("base64")
+            for (let i = 0; i < images.length; i += 4) {
+                const imagesToCollage = images.slice(i, i + 4);
+                const imageBuffers = imagesToCollage.map(image => Buffer.from(image.buffer, "base64"));
+                const base64Buffer = Buffer.from(await createCollage(imageBuffers, collageWidth, "image/png")).toString("base64")
                 collage.push({
                     buffer: base64Buffer,
                     type: "IMAGE",
                     location: location,
-                    assets: imageCollection
+                    assets: imagesToCollage
                 })
             }
 
@@ -126,7 +127,7 @@ async function createCollagePayload(assets) {
     }
 }
 
-function simplifyCollagePayload(collage, videoUri) {
+function simplifyCollagePayload(collage, videoUriMap) {
     try {
         let simplified = [];
 
@@ -156,10 +157,12 @@ function simplifyCollagePayload(collage, videoUri) {
                         }
                     }
                 } else {
+                    // Use asset index to look up video URI
+                    const videoUri = videoUriMap[collage[index].assets[0].assetIndex];
                     return {
                         fileData: {
                             mimeType: collage[index].assets[0].mimeType,
-                            fileUri: videoUri[c.buffer]
+                            fileUri: videoUri || ""
                         }
                     }
                 }
@@ -199,9 +202,9 @@ async function describeAssets(assets) {
             }
         })
 
-        var videoUri = {}
+        const videoUriMap = {}; // Map asset index to video URI
 
-        const inlineData = await Promise.all(assets.map(async asset => {
+        const inlineData = await Promise.all(assets.map(async (asset, index) => {
             if (asset.type === "IMAGE") {
                 return {
                     inlineData: {
@@ -217,7 +220,7 @@ async function describeAssets(assets) {
                 await waitForFilesActive(files);
                 fs.unlinkSync(tempFilePath)
 
-                videoUri[asset.buffer] = files[0].uri;
+                videoUriMap[index] = files[0].uri; // Use asset index instead of buffer
 
                 return {
                     fileData: {
@@ -231,7 +234,7 @@ async function describeAssets(assets) {
 
         return {
             descriptions: JSON.parse(result.response.text()).result,
-            videoUri: videoUri
+            videoUriMap: videoUriMap
         }
     } catch (err) {
         console.error("Error describing asset: " + err.message);
@@ -332,9 +335,15 @@ async function generateScript(payload) {
             annotations
         } = payload;
 
+        // Add original index to each asset for tracking through transformations
+        assets = assets.map((asset, index) => ({
+            ...asset,
+            assetIndex: index
+        }));
+
         const {
             descriptions,
-            videoUri
+            videoUriMap
         } = await describeAssets(assets);
         assets = assets.map((asset, index) => {
             return {
@@ -343,7 +352,7 @@ async function generateScript(payload) {
             }
         })
         const collagePayload = await createCollagePayload(assets);
-        const simplified = simplifyCollagePayload(collagePayload, videoUri);
+        const simplified = simplifyCollagePayload(collagePayload, videoUriMap);
         const annotationsImage = await convertToImage(annotations)
 
         let script = await generateNarrative(simplified, memorableMoments, type, annotationsImage);
@@ -412,39 +421,9 @@ async function tts(text, playHTCred) {
     }
 }
 
-async function createInstantVoiceClone(playHTCred) {
-    try {
-        const formData = new FormData();
-
-        formData.append('sample_file', new Blob(Buffer.from(playHTCred.audio, "base64")));
-        formData.append('voice_name', 'MemoMosaic');
-
-        const url = 'https://api.play.ht/api/v2/cloned-voices/instant';
-        const options = {
-            method: 'POST',
-            headers: {
-                accept: 'application/json',
-                AUTHORIZATION: `Bearer ${playHTCred.secretKey}`,
-                'X-USER-ID': playHTCred.userId
-            }
-        };
-
-        options.body = formData;
-
-        let clonedVoice = await fetch(url, options)
-            .then(res => res.json())
-
-        return clonedVoice;
-    } catch (err) {
-        console.error("Error cloning voice: " + err.message);
-        throw err;
-    }
-}
-
 // Temporary file store
 async function uploadFile(base64Data, filename = "audio.mp3") {
-    const buffer = Buffer.from(base64Data, 'base64');
-    const blob = new Blob([buffer])
+    const blob = new Blob([Buffer.from(base64Data, 'base64')])
 
     const formData = new FormData();
     formData.append('file', blob, filename);
@@ -495,5 +474,6 @@ async function convertToImage(annotations) {
 }
 
 module.exports = {
-    generateScript
+    generateScript,
+    uploadFile
 }

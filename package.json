@@ -11,19 +11,16 @@
   "description": "",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@tensorflow/tfjs-node": "^4.22.0",
-    "@vladmandic/face-api": "^1.7.15",
     "@wylie39/image-collage": "^0.1.0",
-    "canvas": "^3.1.0",
     "core-js": "^3.43.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "ejs": "^3.1.10",
     "express": "^5.1.0",
     "google-tts-api": "^2.0.2",
+    "multer": "^2.0.2",
     "playht": "^0.21.0",
     "puppeteer": "^24.10.0",
-    "tfjs": "^0.6.0",
     "unsplash-js": "^7.0.19"
   }
 }
