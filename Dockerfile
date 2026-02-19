@@ -4,7 +4,15 @@ ENV PUPPETEER_EXECUTABLE_PATH="/usr/bin/chromium"
 
 WORKDIR /app/
 
-RUN apk update && apk add --no-cache chromium
+RUN apk update && apk add --no-cache \
+    chromium \
+    build-base \
+    g++ \
+    cairo-dev \
+    jpeg-dev \
+    pango-dev \
+    giflib-dev \
+    python3
 
 COPY package*.json ./
 RUN npm ci
