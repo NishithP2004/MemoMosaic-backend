@@ -441,7 +441,7 @@ async function uploadFile(base64Data, filename = "audio.mp3") {
         const data = await response.json();
         let t = data.data.url;
         // const url = t.slice(0, t.indexOf("/", t.indexOf(".org"))) + "/dl/" + t.slice(t.indexOf("/", t.indexOf(".org")) + 1)
-        const url = `${new URL(t).protocol}//${new URL(t).hostname}/dl${new URL(t).pathname}`
+        const url = `https://${new URL(t).hostname}/dl${new URL(t).pathname}`
         return url;
     } catch (error) {
         console.error('Error uploading file:', error.message);
@@ -477,3 +477,4 @@ module.exports = {
     generateScript,
     uploadFile
 }
+
