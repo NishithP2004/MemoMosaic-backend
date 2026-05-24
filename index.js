@@ -95,18 +95,24 @@ app.post("/create", upload.fields([
 
         const script = await generateScript(payload);
 
-        // Upload collages to tmpfiles.org and replace base64 with URLs
+        // Upload collages to tmpfiles.org, but preserve base64 for clients that need
+        // direct bytes and cannot fetch tmpfiles.org because of browser CORS.
         script.scenes = await Promise.all(script.scenes.map(async (scene) => {
             try {
                 const uploadUrl = await uploadFile(scene.collage, `collage-${Date.now()}.${scene.type === 'IMAGE' ? 'png' : 'mp4'}`);
                 return {
                     ...scene,
-                    collage: uploadUrl // Replace base64 with URL
+                    collageBase64: scene.collage,
+                    collageUrl: uploadUrl,
+                    collage: uploadUrl // Keep existing response contract for URL-based clients
                 };
             } catch (err) {
                 console.error(`Error uploading collage: ${err.message}`);
                 // Return scene with base64 if upload fails
-                return scene;
+                return {
+                    ...scene,
+                    collageBase64: scene.collage
+                };
             }
         }));
 
