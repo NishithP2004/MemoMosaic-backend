@@ -68,20 +68,33 @@ async function waitForFilesActive(files) {
 
 async function createCollagePayload(assets) {
     try {
-        const sorted = assets.sort((a, b) => {
-            let d1 = new Date(a)
-            let d2 = new Date(b)
+        const sorted = assets.map(asset => {
+            const captureDate = new Date(asset.creation_time);
+            const captureDay = Number.isNaN(captureDate.getTime())
+                ? "unknown-date"
+                : captureDate.toISOString().slice(0, 10);
+            return {
+                ...asset,
+                captureDay,
+                groupKey: `${asset.location || "Unknown"}::${captureDay}`
+            };
+        }).sort((a, b) => {
+            const d1 = new Date(a.creation_time)
+            const d2 = new Date(b.creation_time)
 
-            return (d2.getTime() - d1.getTime())
+            return (d1.getTime() - d2.getTime())
         })
 
-        const groups = groupBy(sorted, "location")
+        const groups = groupBy(sorted, "groupKey")
         const locations = [];
 
         for (let group of Object.keys(groups)) {
             let subgroup = groupBy(groups[group], "type");
+            const location = groups[group][0]?.location || "Unknown";
             locations.push({
-                [group]: subgroup
+                key: group,
+                location,
+                subgroup
             })
         }
 
@@ -91,12 +104,12 @@ async function createCollagePayload(assets) {
         console.log(locations)
 
         for (let group of locations) {
-            let location = Object.keys(group)[0];
+            let location = group.location;
             console.log(group)
             console.log(location)
 
-            const images = group[location]["IMAGE"] || [];
-            const videos = group[location]["VIDEO"] || [];
+            const images = group.subgroup["IMAGE"] || [];
+            const videos = group.subgroup["VIDEO"] || [];
 
             for (let i = 0; i < images.length; i += 4) {
                 const imagesToCollage = images.slice(i, i + 4);
@@ -318,11 +331,42 @@ async function getLocationBanner(location) {
             })
             .then(res => res.response.results)
 
-        return images[Math.floor(Math.random() * images.length)].urls.regular
+        if (!images.length) {
+            return {
+                url: "",
+                base64: "",
+                mimeType: "image/jpeg"
+            };
+        }
+
+        const url = images[Math.floor(Math.random() * images.length)].urls.regular
+        const image = await fetchImageAsBase64(url);
+
+        return {
+            url,
+            ...image
+        }
     } catch (err) {
         console.log("Error fetching image from Unsplash: " + err.message);
-        throw err;
+        return {
+            url: "",
+            base64: "",
+            mimeType: "image/jpeg"
+        };
     }
+}
+
+async function fetchImageAsBase64(url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Background image fetch failed: ${response.status}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return {
+        base64: Buffer.from(arrayBuffer).toString("base64"),
+        mimeType: response.headers.get("content-type") || "image/jpeg"
+    };
 }
 
 async function generateScript(payload) {
@@ -358,13 +402,16 @@ async function generateScript(payload) {
         let script = await generateNarrative(simplified, memorableMoments, type, annotationsImage);
 
         script.scenes = await Promise.all(script.scenes.map(async (scene, index) => {
+            const background = await getLocationBanner(collagePayload[index].location);
             return {
                 ...scene,
                 collage: collagePayload[index].buffer,
                 type: collagePayload[index].type,
                 mimeType: (collagePayload[index].type === "IMAGE") ? "image/png" : collagePayload[index].assets[0].mimeType,
                 location: collagePayload[index].location,
-                background_image: await getLocationBanner(collagePayload[index].location),
+                background_image: background.url,
+                backgroundImageBase64: background.base64,
+                backgroundMimeType: background.mimeType,
                 audio: await tts(scene.narrative, playHTCred)
             }
         }))
